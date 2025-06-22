@@ -146,7 +146,7 @@ def create_user(username, password, email, is_admin=False):
                 return False, "Email already in use"
         
         trial_start = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        trial_end = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+        trial_end = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
         
         users[username] = {
             "password": hash_password(password),
