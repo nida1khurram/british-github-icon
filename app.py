@@ -10,30 +10,6 @@ from PIL import Image
 import base64
 import re
 
-# # Hide the GitHub link in the top right corner
-# hide_github_link = """
-# <style>
-# #MainMenu {visibility: hidden;}
-# footer {visibility: hidden;}
-# header {visibility: hidden;}
-# </style>
-# """
-# st.markdown(hide_github_link, unsafe_allow_html=True)
-# _______________________________________________________________-
-# hide_github_icon = """
-# <style>
-# .css-1jc7ptx, .e1ewe7hr3, .viewerBadge_container__1QSob, 
-# .styles_viewerBadge__1yB5_, .viewerBadge_link__1S137, 
-# .viewerBadge_text__1JaDK { display: none; }
-# #MainMenu { visibility: visible; }
-# footer { visibility: visible; }
-# header { visibility: visible; }
-# </style>
-# """
-# st.markdown(hide_github_icon, unsafe_allow_html=True)
-
-#end  Hide the GitHub link in the top right corner
-
 # Initialize or load files
 CSV_FILE = "fees_data.csv"
 USER_DB_FILE = "users.json"
@@ -126,7 +102,7 @@ def authenticate_user(username, password):
         return False
 
 def create_user(username, password, email, is_admin=False):
-    """Create a new user account with email and 1-month trial"""
+    """Create a new user account with email and 1-day trial"""
     try:
         if os.path.exists(USER_DB_FILE):
             with open(USER_DB_FILE, 'r') as f:
@@ -503,7 +479,7 @@ def home_page():
     # School Name and Subtitle
     st.markdown('<h1 class="title-text">British School of Karachi </h1>', unsafe_allow_html=True)
     st.markdown('<h1 class="title-text">Fees Management System</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="subtitle-text">Streamline your school\'s fee collection and tracking process with a 1-month free trial!</p>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle-text">Streamline your school\'s fee collection and tracking process with a 1-day free trial!</p>', unsafe_allow_html=True)
     
     # Feature Cards
     col1, col2, col3 = st.columns(3)
@@ -589,9 +565,9 @@ def home_page():
                     <li>Login with username/password.</li>
                     <li>Data saved securely in files (no risk of losing records).</li>
                 </ul>
-                <p class="about-list"><strong>Free 1-Month Trial</strong></p>
+                <p class="about-list"><strong>Free 1-Day Trial</strong></p>
                 <ul class="about-list">
-                    <li>New users get 30 days free to test all features.</li>
+                    <li>New users get 1 day free to test all features.</li>
                 </ul>
                 """,
                 unsafe_allow_html=True
@@ -647,7 +623,7 @@ def home_page():
         st.markdown(
             """
             <p class="about-text">
-                Try the 1-month free trial – no payment needed!
+                Try the 1-day free trial – no payment needed!
             </p>
             """,
             unsafe_allow_html=True
@@ -658,7 +634,7 @@ def home_page():
     st.markdown("""
     <div style="text-align: center; margin-top: 3rem; color: #7f8c8d; font-size: 0.8rem;">
         <p>© 2025 School Fees Management System | Developed with ❤️ for educational institutions</p>
-        <p>Start your 1-month free trial today!</p>
+        <p>Start your 1-day free trial today!</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -666,7 +642,7 @@ def login_page():
     """Display login page with signup option and handle authentication"""
     st.title("🔒 School Fees Management - Login / Sign Up")
     
-    st.markdown("**New users, including admins, must sign up to start a 1-month free trial.**")
+    st.markdown("**New users, including admins, must sign up to start a 1-day free trial.**")
     
     tabs = st.tabs(["Sign Up", "Login"])
     
@@ -682,7 +658,7 @@ def login_page():
             if show_password:
                 st.text(f"Password will be: {new_password if new_password else '[not set]'}")
             
-            signup_submit = st.form_submit_button("Sign Up (Start 1-Month Free Trial)")
+            signup_submit = st.form_submit_button("Sign Up (Start 1-Day Free Trial)")
             
             if signup_submit:
                 if not new_username or not new_password or not new_email:
@@ -692,7 +668,7 @@ def login_page():
                 else:
                     success, message = create_user(new_username, new_password, new_email, is_admin)
                     if success:
-                        st.success(f"{message} Your 1-month free trial has started!")
+                        st.success(f"{message} Your 1-day free trial has started!")
                         st.info(f"User '{new_username}' created with email: {new_email}")
                         if authenticate_user(new_username, new_password):
                             st.rerun()
@@ -739,7 +715,7 @@ def user_management():
                     success, message = create_user(new_username, new_password, new_email, is_admin)
                     if success:
                         st.success(message)
-                        st.info(f"User '{new_username}' created with email: {new_email}, Trial: 1-month trial started")
+                        st.info(f"User '{new_username}' created with email: {new_email}, Trial: 1-day trial started")
                     else:
                         st.error(message)
 
