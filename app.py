@@ -1,4 +1,4 @@
-# type:ignore   #https://knai-school-app.streamlit.app/
+#type:ignore
 import streamlit as st
 from datetime import datetime, timedelta
 import os
@@ -9,11 +9,6 @@ import json
 from PIL import Image
 import base64
 import re
-
-# Initialize or load files
-CSV_FILE = "fees_data.csv"
-USER_DB_FILE = "users.json"
-STUDENT_FEES_FILE = "student_fees.json"
 
 # Initialize session state for authentication and app state
 if 'authenticated' not in st.session_state:
@@ -39,11 +34,20 @@ if 'last_class_section' not in st.session_state:
 if 'trial_remaining' not in st.session_state:
     st.session_state.trial_remaining = None
 
+# File paths
+USER_DB_FILE = "users.json"
+STUDENT_FEES_FILE = "student_fees.json"
+
+def get_admin_csv_file(admin_username):
+    """Return the CSV file path specific to the admin"""
+    return f"fees_data_{admin_username}.csv"
+
 def initialize_files():
     """Initialize all required files"""
-    initialize_csv()
     initialize_user_db()
     initialize_student_fees()
+    if st.session_state.authenticated and st.session_state.current_user:
+        initialize_csv()
 
 def initialize_user_db():
     """Initialize the user database if it doesn't exist"""
@@ -57,6 +61,34 @@ def initialize_student_fees():
         with open(STUDENT_FEES_FILE, 'w') as f:
             json.dump({}, f)
 
+def initialize_csv():
+    """Initialize the admin-specific CSV file with proper columns if it doesn't exist"""
+    csv_file = get_admin_csv_file(st.session_state.current_user)
+    if not os.path.exists(csv_file):
+        columns = [
+            "ID", "Student Name", "Class Category", "Class Section", "Month", 
+            "Monthly Fee", "Annual Charges", "Admission Fee", 
+            "Received Amount", "Payment Method", "Date", "Signature", 
+            "Entry Timestamp", "Academic Year"
+        ]
+        pd.DataFrame(columns=columns).to_csv(csv_file, index=False)
+    else:
+        try:
+            df = pd.read_csv(csv_file)
+            expected_columns = [
+                "ID", "Student Name", "Class Category", "Class Section", "Month", 
+                "Monthly Fee", "Annual Charges", "Admission Fee", 
+                "Received Amount", "Payment Method", "Date", "Signature", 
+                "Entry Timestamp", "Academic Year"
+            ]
+            for col in expected_columns:
+                if col not in df.columns:
+                    df[col] = np.nan
+            df.to_csv(csv_file, index=False)
+        except Exception as e:
+            st.error(f"Error initializing CSV: {str(e)}")
+            pd.DataFrame(columns=expected_columns).to_csv(csv_file, index=False)
+
 def hash_password(password):
     """Hash a password for storing"""
     return sha256(password.encode('utf-8')).hexdigest()
@@ -66,8 +98,8 @@ def verify_password(stored_password, provided_password):
     return stored_password == sha256(provided_password.encode('utf-8')).hexdigest()
 
 def validate_email(email):
-    """Validate email format"""
-    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    """Validate email format and ensure it's a Gmail address"""
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@gmail\.com$'
     return re.match(email_pattern, email) is not None
 
 def authenticate_user(username, password):
@@ -95,6 +127,10 @@ def authenticate_user(username, password):
                 else:
                     st.session_state.trial_remaining = None
                 
+                # Initialize admin-specific CSV file
+                if st.session_state.is_admin:
+                    initialize_csv()
+                
                 return True
         return False
     except Exception as e:
@@ -102,7 +138,7 @@ def authenticate_user(username, password):
         return False
 
 def create_user(username, password, email, is_admin=False):
-    """Create a new user account with email and 1-day trial"""
+    """Create a new user account with email and 1-month trial"""
     try:
         if os.path.exists(USER_DB_FILE):
             with open(USER_DB_FILE, 'r') as f:
@@ -110,19 +146,16 @@ def create_user(username, password, email, is_admin=False):
         else:
             users = {}
         
-        if username in users:
-            return False, "Username already exists"
-        
         if not validate_email(email):
-            return False, "Invalid email format"
+            return False, "Please use a valid Gmail address (e.g., username@gmail.com)"
         
-        # Safely check for email uniqueness
+        # Check for email uniqueness
         for user in users.values():
             if 'email' in user and user['email'] == email:
-                return False, "Email already in use"
+                return False, "This Gmail address is already registered. Please use a different Gmail address or log in."
         
         trial_start = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        trial_end = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+        trial_end = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
         
         users[username] = {
             "password": hash_password(password),
@@ -130,7 +163,8 @@ def create_user(username, password, email, is_admin=False):
             "email": email,
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "trial_start": trial_start,
-            "trial_end": trial_end
+            "trial_end": trial_end,
+            "created_by": st.session_state.current_user if st.session_state.current_user else "system"
         }
         
         with open(USER_DB_FILE, 'w') as f:
@@ -140,69 +174,42 @@ def create_user(username, password, email, is_admin=False):
     except Exception as e:
         return False, f"Error creating user: {str(e)}"
 
-def initialize_csv():
-    """Initialize the CSV file with proper columns if it doesn't exist"""
-    if not os.path.exists(CSV_FILE):
-        columns = [
-            "ID", "Student Name", "Class Category", "Class Section", "Month", 
-            "Monthly Fee", "Annual Charges", "Admission Fee", 
-            "Received Amount", "Payment Method", "Date", "Signature", 
-            "Entry Timestamp", "Academic Year"
-        ]
-        pd.DataFrame(columns=columns).to_csv(CSV_FILE, index=False)
-    else:
-        try:
-            df = pd.read_csv(CSV_FILE)
-            expected_columns = [
-                "ID", "Student Name", "Class Category", "Class Section", "Month", 
-                "Monthly Fee", "Annual Charges", "Admission Fee", 
-                "Received Amount", "Payment Method", "Date", "Signature", 
-                "Entry Timestamp", "Academic Year"
-            ]
-            
-            for col in expected_columns:
-                if col not in df.columns:
-                    df[col] = np.nan
-            
-            df.to_csv(CSV_FILE, index=False)
-        except Exception as e:
-            st.error(f"Error initializing CSV: {str(e)}")
-            pd.DataFrame(columns=expected_columns).to_csv(CSV_FILE, index=False)
-
 def generate_student_id(student_name, class_category):
     """Generate a unique 8-character ID based on student name and class"""
     unique_str = f"{student_name}_{class_category}".encode('utf-8')
     return md5(unique_str).hexdigest()[:8].upper()
 
 def save_to_csv(data):
-    """Save data to CSV with proper validation"""
+    """Save data to admin-specific CSV with proper validation"""
     try:
-        if os.path.exists(CSV_FILE):
-            df = pd.read_csv(CSV_FILE)
+        csv_file = get_admin_csv_file(st.session_state.current_user)
+        if os.path.exists(csv_file):
+            df = pd.read_csv(csv_file)
         else:
             df = pd.DataFrame(columns=data[0].keys())
         
         new_df = pd.DataFrame(data)
         df = pd.concat([df, new_df], ignore_index=True)
         
-        df.to_csv(CSV_FILE, index=False)
+        df.to_csv(csv_file, index=False)
         return True
     except Exception as e:
         st.error(f"Error saving data: {str(e)}")
         return False
 
 def load_data():
-    """Load data from CSV with robust error handling"""
-    if not os.path.exists(CSV_FILE):
+    """Load data from admin-specific CSV with robust error handling"""
+    csv_file = get_admin_csv_file(st.session_state.current_user)
+    if not os.path.exists(csv_file):
         return pd.DataFrame()
     
     try:
         try:
-            df = pd.read_csv(CSV_FILE)
+            df = pd.read_csv(csv_file)
         except pd.errors.EmptyDataError:
             return pd.DataFrame()
         except pd.errors.ParserError:
-            df = pd.read_csv(CSV_FILE, on_bad_lines='skip')
+            df = pd.read_csv(csv_file, on_bad_lines='skip')
         
         expected_columns = [
             "ID", "Student Name", "Class Category", "Class Section", "Month", 
@@ -232,9 +239,10 @@ def load_data():
         return pd.DataFrame()
 
 def update_data(updated_df):
-    """Update the CSV file with the modified DataFrame"""
+    """Update the admin-specific CSV file with the modified DataFrame"""
     try:
-        updated_df.to_csv(CSV_FILE, index=False)
+        csv_file = get_admin_csv_file(st.session_state.current_user)
+        updated_df.to_csv(csv_file, index=False)
         return True
     except Exception as e:
         st.error(f"Error updating data: {str(e)}")
@@ -479,7 +487,7 @@ def home_page():
     # School Name and Subtitle
     st.markdown('<h1 class="title-text">British School of Karachi </h1>', unsafe_allow_html=True)
     st.markdown('<h1 class="title-text">Fees Management System</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="subtitle-text">Streamline your school\'s fee collection and tracking process with a 1-day free trial!</p>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle-text">Streamline your school\'s fee collection and tracking process with a 1-month free trial!</p>', unsafe_allow_html=True) 
     
     # Feature Cards
     col1, col2, col3 = st.columns(3)
@@ -534,7 +542,7 @@ def home_page():
             unsafe_allow_html=True
         )
         
-        st.markdown('<h3 class="about-subheading">✨ Key Features</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 class="about-subheading">✯ Key Features</h3>', unsafe_allow_html=True)
         col1, col2 = st.columns(2)
         with col1:
             st.markdown(
@@ -565,9 +573,9 @@ def home_page():
                     <li>Login with username/password.</li>
                     <li>Data saved securely in files (no risk of losing records).</li>
                 </ul>
-                <p class="about-list"><strong>Free 1-Day Trial</strong></p>
+                <p class="about-list"><strong>Free 1-Month Trial</strong></p>
                 <ul class="about-list">
-                    <li>New users get 1 day free to test all features.</li>
+                    <li>New users get 30 days free to test all features.</li> 
                 </ul>
                 """,
                 unsafe_allow_html=True
@@ -623,7 +631,7 @@ def home_page():
         st.markdown(
             """
             <p class="about-text">
-                Try the 1-day free trial – no payment needed!
+                Try the 1-month free trial – no payment needed!  
             </p>
             """,
             unsafe_allow_html=True
@@ -634,7 +642,7 @@ def home_page():
     st.markdown("""
     <div style="text-align: center; margin-top: 3rem; color: #7f8c8d; font-size: 0.8rem;">
         <p>© 2025 School Fees Management System | Developed with ❤️ for educational institutions</p>
-        <p>Start your 1-day free trial today!</p>
+        <p>Start your 1-month free trial today!</p> 
     </div>
     """, unsafe_allow_html=True)
 
@@ -642,14 +650,15 @@ def login_page():
     """Display login page with signup option and handle authentication"""
     st.title("🔒 School Fees Management - Login / Sign Up")
     
-    st.markdown("**New users, including admins, must sign up to start a 1-day free trial.**")
+    st.markdown("**New users, including admins, must sign up with their Gmail address to start a 1-month free trial.**") 
+    st.markdown("**⚠️ Please use the same Gmail address you used to access this app.**")
     
     tabs = st.tabs(["Sign Up", "Login"])
     
     with tabs[0]:
         with st.form("signup_form"):
             new_username = st.text_input("Username*")
-            new_email = st.text_input("Email*")
+            new_email = st.text_input("Gmail Address*", placeholder="yourname@gmail.com", help="Only the Gmail address used to access this app is allowed.")
             new_password = st.text_input("Password*", type="password", key="signup_pass")
             confirm_password = st.text_input("Confirm Password*", type="password", key="signup_confirm")
             is_admin = st.checkbox("Register as Admin User")
@@ -658,17 +667,17 @@ def login_page():
             if show_password:
                 st.text(f"Password will be: {new_password if new_password else '[not set]'}")
             
-            signup_submit = st.form_submit_button("Sign Up (Start 1-Day Free Trial)")
+            signup_submit = st.form_submit_button("Sign Up (Start 1-month Free Trial)") 
             
             if signup_submit:
                 if not new_username or not new_password or not new_email:
-                    st.error("Username, password, and email are required!")
+                    st.error("Username, password, and Gmail address are required!")
                 elif new_password != confirm_password:
-                    st.error("Passwords do not match")
+                    st.error("Passwords do not match!")
                 else:
                     success, message = create_user(new_username, new_password, new_email, is_admin)
                     if success:
-                        st.success(f"{message} Your 1-day free trial has started!")
+                        st.success(f"{message} Your 1-month free trial has started!") 
                         st.info(f"User '{new_username}' created with email: {new_email}")
                         if authenticate_user(new_username, new_password):
                             st.rerun()
@@ -689,15 +698,15 @@ def login_page():
                     st.error("Invalid username or password")
 
 def user_management():
-    """Admin interface for user management"""
+    """Admin interface for user management, showing only users created by the current admin"""
     st.header("👥 User Management")
     
     with st.expander("➕ Create New User"):
         with st.form("create_user_form"):
-            new_username = st.text_input("New Username")
-            new_email = st.text_input("Email")
-            new_password = st.text_input("New Password", type="password", key="new_pass")
-            confirm_password = st.text_input("Confirm Password", type="password", key="confirm_pass")
+            new_username = st.text_input("New Username*")
+            new_email = st.text_input("Gmail Address*", placeholder="yourname@gmail.com", help="Only Gmail addresses are allowed.")
+            new_password = st.text_input("New Password*", type="password", key="new_pass")
+            confirm_password = st.text_input("Confirm Password*", type="password", key="confirm_pass")
             is_admin = st.checkbox("Admin User")
             show_password = st.checkbox("Show Password")
             
@@ -708,14 +717,14 @@ def user_management():
             
             if submit:
                 if not new_username or not new_password or not new_email:
-                    st.error("Username, password, and email are required!")
+                    st.error("Username, password, and Gmail address are required!")
                 elif new_password != confirm_password:
-                    st.error("Passwords do not match")
+                    st.error("Passwords do not match!")
                 else:
                     success, message = create_user(new_username, new_password, new_email, is_admin)
                     if success:
                         st.success(message)
-                        st.info(f"User '{new_username}' created with email: {new_email}, Trial: 1-day trial started")
+                        st.info(f"User '{new_username}' created with email: {new_email}, Trial: 1-month trial started")
                     else:
                         st.error(message)
 
@@ -723,28 +732,32 @@ def user_management():
         try:
             with open(USER_DB_FILE, 'r') as f:
                 users = json.load(f)
-            
+                
             user_data = []
             for username, details in users.items():
-                trial_remaining = "N/A"
-                if details.get('trial_end'):
-                    trial_end = datetime.strptime(details['trial_end'], "%Y-%m-%d %H:%M:%S")
-                    remaining = trial_end - datetime.now()
-                    trial_remaining = format_trial_remaining(remaining) if remaining.total_seconds() > 0 else "Expired"
+                if details.get('created_by') == st.session_state.current_user or username == st.session_state.current_user:
+                    trial_remaining = "N/A"
+                    if details.get('trial_end'):
+                        trial_end = datetime.strptime(details['trial_end'], "%Y-%m-%d %H:%M:%S")
+                        remaining = trial_end - datetime.now()
+                        trial_remaining = format_trial_remaining(remaining) if remaining.total_seconds() > 0 else "Expired"
                 
-                user_data.append({
-                    "Username": username,
-                    "Email": details.get('email', 'N/A'),
-                    "Admin": "Yes" if details.get('is_admin', False) else "No",
-                    "Created At": details.get('created_at', "Unknown"),
-                    "Trial Remaining": trial_remaining
-                })
+                    user_data.append({
+                        "Username": username,
+                        "Email": details.get('email', 'N/A'),
+                        "Admin": "Yes" if details.get('is_admin', False) else "No",
+                        "Created At": details.get('created_at', "Unknown"),
+                        "Trial Remaining": trial_remaining,
+                        "Created By": details.get('created_by', 'system')
+                    })
             
             user_df = pd.DataFrame(user_data)
-            st.dataframe(user_df)
-            
-            st.subheader("Delete User")
-            if not user_df.empty:
+            if user_df.empty:
+                st.info("No users found created by you.")
+            else:
+                st.dataframe(user_df)
+                
+                st.subheader("Delete User")
                 user_to_delete = st.selectbox(
                     "Select User to Delete",
                     user_df['Username'].tolist(),
@@ -771,7 +784,7 @@ def user_management():
                                 st.error("User not found!")
                         except Exception as e:
                             st.error(f"Error deleting user: {str(e)}")
-            
+
         except Exception as e:
             st.error(f"Error loading users: {str(e)}")
 
@@ -780,30 +793,34 @@ def user_management():
             with open(USER_DB_FILE, 'r') as f:
                 users = json.load(f)
             
-            users_list = list(users.keys())
-            selected_user = st.selectbox("Select User", users_list)
-            
-            with st.form("reset_password_form"):
-                new_password = st.text_input("New Password", type="password", key="reset_pass")
-                confirm_password = st.text_input("Confirm Password", type="password", key="reset_confirm")
-                show_password = st.checkbox("Show New Password")
+            users_list = [username for username, details in users.items() 
+                         if details.get('created_by') == st.session_state.current_user or username == st.session_state.current_user]
+            if not users_list:
+                st.info("No users found created by you.")
+            else:
+                selected_user = st.selectbox("Select User", users_list, key="reset_user_select")
                 
-                if show_password:
-                    st.text(f"New password will be: {new_password if new_password else '[not set]'}")
-                
-                reset_btn = st.form_submit_button("Reset Password")
-                
-                if reset_btn:
-                    if not new_password:
-                        st.error("Password cannot be empty!")
-                    elif new_password != confirm_password:
-                        st.error("Passwords do not match!")
-                    else:
-                        users[selected_user]['password'] = hash_password(new_password)
-                        with open(USER_DB_FILE, 'w') as f:
-                            json.dump(users, f)
-                        st.success(f"Password for {selected_user} reset successfully!")
-                        st.info(f"New password: {new_password}")
+                with st.form("reset_password_form"):
+                    new_password = st.text_input("New Password*", type="password", key="reset_pass")
+                    confirm_password = st.text_input("Confirm Password*", type="password", key="reset_confirm")
+                    show_password = st.checkbox("Show New Password")
+                    
+                    if show_password:
+                        st.text(f"New password will be: {new_password if new_password else '[not set]'}")
+                    
+                    reset_btn = st.form_submit_button("Reset Password")
+                    
+                    if reset_btn:
+                        if not new_password:
+                            st.error("Password cannot be empty!")
+                        elif new_password != confirm_password:
+                            st.error("Passwords do not match!")
+                        else:
+                            users[selected_user]['password'] = hash_password(new_password)
+                            with open(USER_DB_FILE, 'w') as f:
+                                json.dump(users, f)
+                            st.success(f"Password for {selected_user} reset successfully!")
+                            st.info(f"New password: {new_password}")
         except Exception as e:
             st.error(f"Error resetting password: {str(e)}")
 
@@ -994,7 +1011,6 @@ def main_app():
     if menu == "Enter Fees":
         st.header("➕ Enter Fee Details")
         
-        # Create the form
         with st.form(key=f"fee_form_{st.session_state.form_key}", clear_on_submit=False):
             col1, col2 = st.columns(2)
             with col1:
@@ -1018,7 +1034,6 @@ def main_app():
                     key=f"class_section_{st.session_state.form_key}"
                 )
             
-            # Add a button to update student data
             update_btn = st.form_submit_button("🔍 Check Student Records")
             
             if update_btn:
@@ -1027,14 +1042,12 @@ def main_app():
             
             student_id = st.session_state.current_student_id
             
-            # Show student records if student_id is available
             if student_id:
                 st.subheader("📋 Student Payment History")
                 df = load_data()
                 student_records = df[df['ID'] == student_id]
                 
                 if not student_records.empty:
-                    # Display all records for the student
                     display_df = student_records[[
                         "Student Name", "Month", "Monthly Fee", "Annual Charges", 
                         "Admission Fee", "Received Amount", "Payment Method", "Date", "Academic Year"
@@ -1050,7 +1063,6 @@ def main_app():
                         use_container_width=True
                     )
                     
-                    # Calculate totals
                     total_monthly = student_records["Monthly Fee"].sum()
                     total_annual = student_records["Annual Charges"].sum()
                     total_admission = student_records["Admission Fee"].sum()
@@ -1062,7 +1074,6 @@ def main_app():
                     col3.metric("Total Admission", format_currency(total_admission))
                     col4.metric("Total Received", format_currency(total_received))
                     
-                    # Show payment status
                     st.subheader("Payment Status")
                     payment_date = st.session_state.get(f"payment_date_{st.session_state.form_key}", datetime.now())
                     academic_year = get_academic_year(payment_date)
@@ -1137,7 +1148,6 @@ def main_app():
                         disabled=bool(predefined_fees) and not st.session_state.is_admin,
                         key=f"monthly_fee_{st.session_state.form_key}"
                     )
-                    # Month selection as dropdown
                     selected_month = st.selectbox(
                         "Select Month*",
                         ["Select a month"] + st.session_state.available_months,
@@ -1292,7 +1302,6 @@ def main_app():
                         st.balloons()
                         st.rerun()
             
-            # Display last saved records if available
             if st.session_state.last_saved_records:
                 st.subheader("📋 Last Saved Fee Record(s)")
                 saved_df = pd.DataFrame(st.session_state.last_saved_records)
@@ -1461,7 +1470,7 @@ def main_app():
                     st.download_button(
                         label="📥 Download All Records as CSV",
                         data=csv,
-                        file_name="all_fee_records.csv",
+                        file_name=f"fee_records_{st.session_state.current_user}.csv",
                         mime="text/csv"
                     )
             
@@ -1553,12 +1562,12 @@ def main_app():
                                 )
                                         
                                 csv = display_df.to_csv(index=False).encode("utf-8")
-                                st.download_button(
-                                    label=f"📥 Download {month} Data",
-                                    data=csv,
-                                    file_name=f"{month.lower()}_payment_status.csv",
-                                    mime="text/csv"
-                                )
+                                # st.download_button(
+                                #     label=f"📥 Download {month} Data",
+                                #     data=csv,
+                                #     file_name=f"{month.lower()}_payment_status_{st.session_state.current_user}.csv",
+                                #     mime="text/csv"
+                                # )
                             
                             st.subheader("Overall Payment Status")
                             student_summary = merged.groupby(["ID", "Student Name", "Class Category"]).agg({
@@ -1577,12 +1586,13 @@ def main_app():
                             )
                                     
                             csv = student_summary.to_csv(index=False).encode("utf-8")
-                            st.download_button(
-                                label="📥 Download Overall Payment Status",
-                                data=csv,
-                                file_name="overall_payment_status.csv",
-                                mime="text/csv"
-                            )
+                            # st.download_button(
+                            #     label="📥 Download All Records as CSV",
+                            #     data=csv,
+                            #     file_name=f"all_fee_records_{st.session_state.current_user}.csv",
+                            #     mime="text/csv",
+                            #     key="download_all_records"
+                            # )
             
             elif menu == "Student Yearly Report":
                 st.header("📊 Student Yearly Fee Report")
@@ -1674,7 +1684,7 @@ def main_app():
                             st.download_button(
                                 label="📥 Download Student Report",
                                 data=csv,
-                                file_name=f"{selected_student}_fee_report.csv",
+                                file_name=f"{selected_student}_fee_report_{st.session_state.current_user}.csv",
                                 mime="text/csv"
                             )
             
