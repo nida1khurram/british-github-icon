@@ -377,12 +377,6 @@ def home_page():
     
     st.markdown("""
     <style>
-   
-    /* Hide the entire Streamlit toolbar, including the GitHub icon */
-    [data-testid="stToolbar"] {
-        display: none !important;
-    }
-                
     .main {
         background-color: #f8f9fa;
     }
@@ -618,7 +612,7 @@ def home_page():
                 <li><strong>Reduces Errors</strong> – Automatic totals and reminders for unpaid fees.</li>
                 <li><strong>Always Accessible</strong> – View records anytime, anywhere.</li>
                 <li><strong>Data Security</strong> – No more lost fee registers or tampered records.</li>
-            </ul>
+                </ul>
             """,
             unsafe_allow_html=True
         )
@@ -995,15 +989,6 @@ def set_student_fees():
 def main_app():
     """Main application after login"""
     st.set_page_config(page_title="School Fees Management", layout="wide")
-    # Add CSS to hide the GitHub icon
-    st.markdown("""
-    <style>
-    [data-testid="stToolbar"] {
-        display: none !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
     st.title(f"📚 {st.session_state.school_name or 'School'} Fees Management System")
     
     # Display trial status in sidebar
@@ -1745,6 +1730,15 @@ def main_app():
 
 def main():
     initialize_files()
+    
+    # Add CSS to hide the GitHub icon in the toolbar
+    st.markdown("""
+    <style>
+    [data-testid="stToolbar"] {
+        display: none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
     
     if 'show_login' not in st.session_state:
         st.session_state.show_login = False
