@@ -1,4 +1,3 @@
-
 # type: ignore
 import streamlit as st
 from datetime import datetime, timedelta
@@ -43,12 +42,7 @@ if 'trial_remaining' not in st.session_state:
 USER_DB_FILE = "users.json"
 
 def get_admin_files(school_name):
-    """Return file paths specific to the school, handling None school_name"""
-    if not school_name:
-        return {
-            "fees_csv": "fees_data_default.csv",
-            "student_fees_json": "student_fees_default.json"
-        }
+    """Return file paths specific to the school"""
     safe_school_name = "".join(c for c in school_name.lower() if c.isalnum())
     return {
         "fees_csv": f"fees_data_{safe_school_name}.csv",
@@ -190,8 +184,7 @@ def create_user(username, password, email, school_name=None, is_admin=False, is_
         with open(USER_DB_FILE, 'w') as f:
             json.dump(users, f)
         
-        if is_admin_owner and school_name:
-            st.session_state.school_name = school_name
+        if is_admin_owner:
             initialize_school_files()
         
         return True, "User created successfully"
@@ -565,9 +558,8 @@ def home_page():
         st.markdown(
             """
             <p class="about-text">
- Sistéme de gestion des frais scolaires
-                Ce système numérique permet aux écoles de gérer facilement les dossiers de frais des élèves. Il aide à suivre les paiements, 
-                à générer des rapports et à maintenir les dossiers en toute sécurité.
+                This is a digital system for schools to easily manage student fee records. It helps track payments, 
+                generate reports, and maintain records securely.
             </p>
             """,
             unsafe_allow_html=True
@@ -703,7 +695,7 @@ def login_page():
             signup_submit = st.form_submit_button("Sign Up (Start 1-month Free Trial)") 
             
             if signup_submit:
-                if not new_username or not new_password or not new_email:
+                if not new_username or not new_password or not new_email or (is_admin and not school_name):
                     st.error("Please fill all required fields (*)")
                 elif new_password != confirm_password:
                     st.error("Passwords do not match!")
@@ -1544,13 +1536,15 @@ def main_app():
                     fees_data = load_student_fees()
                     
                     def get_student_fee(student_id):
-                        if fees_data and student_id in fees_data:
-                            return fees_data[student_id].get("monthly_fee", 2000)
+                        if student_id in fees_data:
+                            return fees_data[student_id]["monthly_fee"]
                         student_payments = df[(df['ID'] == student_id) & (df['Monthly Fee'] > 0)]
-                        return student_payments['Monthly Fee'].iloc[-1] if not student_payments.empty else 2000
-                    
+                        if not student_payments.empty:
+                            return student_payments['Monthly Fee'].iloc[-1]
+                        return 2000
+                        
                     merged['Estimated Monthly Fee'] = merged['ID'].apply(get_student_fee)
-                    
+                        
                     merged['Status'] = merged['Monthly Fee'].apply(
                         lambda x: "Paid" if pd.notna(x) and x > 0 else "Unpaid"
                     )
@@ -1558,21 +1552,19 @@ def main_app():
                         lambda row: 0 if row['Status'] == "Paid" else row['Estimated Monthly Fee'],
                         axis=1
                     )
-                    
+                        
                     tabs = st.tabs(MONTHS)
-                    
+                        
                     for i, month in enumerate(MONTHS):
                         with tabs[i]:
                             month_data = merged[merged['Month'] == month].copy()
-                            
-                            if month_data.empty:
-                                st.info(f"No data available for {month}")
-                            else:
+                                
+                            if not month_data.empty:
                                 total_students = len(month_data)
                                 paid_students = len(month_data[month_data["Status"] == "Paid"])
                                 unpaid_students = total_students - paid_students
                                 total_outstanding = month_data[month_data["Status"] == "Unpaid"]["Outstanding"].sum()
-                                
+                                    
                                 col1, col2, col3 = st.columns(3)
                                 with col1:
                                     st.metric("Total Students", total_students)
@@ -1580,12 +1572,12 @@ def main_app():
                                     st.metric("Paid Students", paid_students)
                                 with col3:
                                     st.metric("Unpaid Students", unpaid_students, 
-                                             delta=f"Rs. {int(total_outstanding):,}" if total_outstanding > 0 else "Rs. 0")
-                                
+                                            delta=f"Rs. {int(total_outstanding):,}" if total_outstanding > 0 else "Rs. 0")
+                                    
                                 def color_status(val):
                                     color = "green" if val == "Paid" else "red"
                                     return f"color: {color}"
-                                
+                                    
                                 display_df = month_data[[
                                     "Student Name", "Class Category", "Estimated Monthly Fee", 
                                     "Received Amount", "Outstanding", "Status"
@@ -1595,7 +1587,7 @@ def main_app():
                                     "Received Amount": "Amount Paid",
                                     "Outstanding": "Balance Due"
                                 })
-                                
+                                    
                                 st.dataframe(
                                     display_df.style.format({
                                         "Monthly Fee": format_currency,
@@ -1604,31 +1596,40 @@ def main_app():
                                     }).applymap(color_status, subset=["Status"]),
                                     use_container_width=True
                                 )
+                                        
+                                csv = display_df.to_csv(index=False).encode("utf-8")
+                                st.download_button(
+                                    label=f"📥 Download {month} Data",
+                                    data=csv,
+                                    file_name=f"{month.lower()}_payment_status_{st.session_state.school_name or st.session_state.current_user}.csv",
+                                    mime="text/csv",
+                                    key=f"download_month_{month.lower()}"
+                                )
+                            
+                            st.subheader("Overall Payment Status")
+                            student_summary = merged.groupby(["ID", "Student Name", "Class Category"]).agg({
+                                "Status": lambda x: (x == "Unpaid").sum(),
+                                "Outstanding": "sum"
+                            }).reset_index()
+                            student_summary.columns = [
+                                "ID", "Student Name", "Class Category", "Unpaid Months", "Total Outstanding"
+                            ]
                     
-                    st.subheader("Overall Payment Status")
-                    student_summary = merged.groupby(["ID", "Student Name", "Class Category"]).agg({
-                        "Status": lambda x: (x == "Unpaid").sum(),
-                        "Outstanding": "sum"
-                    }).reset_index()
-                    student_summary.columns = [
-                        "ID", "Student Name", "Class Category", "Unpaid Months", "Total Outstanding"
-                    ]
-                    
-                    st.dataframe(
-                        student_summary.style.format({
-                            "Total Outstanding": format_currency
-                        }),
-                        use_container_width=True
-                    )
-                    
-                    csv = student_summary.to_csv(index=False).encode("utf-8")
-                    st.download_button(
-                        label="📥 Download All Records as CSV",
-                        data=csv,
-                        file_name=f"all_fee_records_{st.session_state.school_name or st.session_state.current_user}.csv",
-                        mime="text/csv",
-                        key="download_all_records"
-                    )
+                            st.dataframe(
+                                student_summary.style.format({
+                                    "Total Outstanding": format_currency
+                                }),
+                                use_container_width=True
+                            )
+                                    
+                            csv = student_summary.to_csv(index=False).encode("utf-8")
+                            st.download_button(
+                                label="📥 Download All Records as CSV",
+                                data=csv,
+                                file_name=f"all_fee_records_{st.session_state.school_name or st.session_state.current_user}.csv",
+                                mime="text/csv",
+                                key="download_all_records"
+                            )
             
             elif menu == "Student Yearly Report":
                 st.header("📊 Student Yearly Fee Report")
